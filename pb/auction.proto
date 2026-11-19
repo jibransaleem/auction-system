@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package auction.v1;
+option go_package = "github.com/jibransaleem/auction-system/engine/pb";
+
+service BidEngine {
+  rpc PlaceBid(PlaceBidRequest) returns (PlaceBidResponse);
+  rpc GetState(GetStateRequest) returns (GetStateResponse);
+}
+
+message PlaceBidRequest {
+  string bid_id     = 1;
+  string auction_id = 2;
+  string bidder_id  = 3;
+  int64  amount     = 4;
+}
+
+message PlaceBidResponse {
+  string bid_id   = 1;
+  bool   accepted = 2;
+  string reason   = 3;   // "", too_low, closed, duplicate, auction_not_found
+  int64  price    = 4;   // price to beat after this bid
+  uint64 version  = 5;
+  int32  rank     = 6;
+}
+
+message GetStateRequest { string auction_id = 1; }
+
+message GetStateResponse {
+  string auction_id      = 1;
+  int64  price           = 2;
+  uint64 version         = 3;
+  int32  stock_left      = 4;
+  int64  ends_at_unix_ms = 5;
+  string status          = 6;
+}
