@@ -1,0 +1,34 @@
+<!doctype html>
+<html>
+<body style="font-family: sans-serif; max-width: 600px; margin: 40px auto">
+  <h3>Auction test client</h3>
+  <p>User: <b id="who"></b></p>
+  <input id="amount" type="number" placeholder="amount">
+  <button onclick="bid()">Bid</button>
+  <pre id="log"></pre>
+
+  <script>
+    const user = new URLSearchParams(location.search).get("user")
+                 || "u" + Math.floor(Math.random() * 1000);
+    document.getElementById("who").textContent = user;
+
+    const log = document.getElementById("log");
+    const ws = new WebSocket("ws://" + location.host + "/ws?user=" + encodeURIComponent(user));
+
+    ws.onopen    = () => log.textContent += "connected\n";
+    ws.onclose   = () => log.textContent += "disconnected\n";
+    ws.onmessage = (e) => log.textContent += "< " + e.data + "\n";
+
+    function bid() {
+      const amount = parseInt(document.getElementById("amount").value, 10);
+      const msg = {
+        type: "bid",
+        bid_id: "b-" + Date.now() + "-" + Math.random().toString(36).slice(2),
+        amount: amount,
+      };
+      ws.send(JSON.stringify(msg));
+      log.textContent += "> bid " + amount + "\n";
+    }
+  </script>
+</body>
+</html>
