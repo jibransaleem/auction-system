@@ -6,7 +6,6 @@ import (
 	"log"
 	"time"
 
-	
 	cfg "github.com/jibransaleem/auction-system/engine/configuration"
 	"github.com/jibransaleem/auction-system/engine"
 )
@@ -23,6 +22,7 @@ type Publisher interface {
 type noopPub struct{}
 
 func (noopPub) Publish(context.Context, cfg.Event) error { return nil }
+
 type BidLog interface {
 	Append(ctx context.Context, bids []cfg.AcceptedBid) error
 }
@@ -30,9 +30,10 @@ type BidLog interface {
 type noopLog struct{}
 
 func (noopLog) Append(context.Context, []cfg.AcceptedBid) error { return nil }
+
 type Manager struct {
-	bidlog  BidLog
-	logDone chan struct{}
+	bidlog   BidLog
+	logDone  chan struct{}
 	conf     cfg.AuctionConfig
 	engine   *engine.Engine
 	store    Store
@@ -40,42 +41,6 @@ type Manager struct {
 	pumpDone chan struct{}
 }
 
-// func New(conf cfg.AuctionConfig, store Store, pub Publisher) (*Manager, error) {
-// 	if conf.Stock < 1 {
-// 		return nil, errors.New("stock must be >= 1")
-// 	}
-// 	if store == nil {
-// 		return nil, errors.New("store is required")
-// 	}
-// 	if pub == nil {
-// 		pub = noopPub{}
-// 	}
-
-// 	// Save the initial state BEFORE the engine starts taking bids.
-// 	initial := cfg.AuctionState{
-// 		AuctionID: conf.AuctionID,
-// 		Price:     conf.MinimumPrice, // Fixed: matches AuctionConfig field name
-// 		Version:   0,
-// 		StockLeft: conf.Stock,
-// 		EndAt:     conf.EndAt,
-// 		Status:    cfg.StatusOpen,
-// 	}
-// 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-// 	defer cancel()
-// 	if err := store.SaveState(ctx, initial); err != nil {
-// 		return nil, err
-// 	}
-
-// 	m := &Manager{
-// 		conf:     conf,
-// 		engine:   engine.New(conf),
-// 		store:    store,
-// 		pub:      pub,
-// 		pumpDone: make(chan struct{}),
-// 	}
-// 	go m.pump()
-// 	return m, nil
-// }
 func New(conf cfg.AuctionConfig, store Store, pub Publisher, bl BidLog) (*Manager, error) {
 	if conf.Stock < 1 {
 		return nil, errors.New("stock must be >= 1")
@@ -90,14 +55,21 @@ func New(conf cfg.AuctionConfig, store Store, pub Publisher, bl BidLog) (*Manage
 		bl = noopLog{}
 	}
 
+	status := cfg.StatusOpen
+	if !conf.StartAt.IsZero() && time.Now().Before(conf.StartAt) {
+		status = cfg.StatusScheduled
+	}
+
 	// Save the initial state BEFORE the engine starts taking bids.
 	initial := cfg.AuctionState{
 		AuctionID: conf.AuctionID,
+		Title:     conf.Title,
+		StartAt:   conf.StartAt,
 		Price:     conf.MinimumPrice,
 		Version:   0,
 		StockLeft: conf.Stock,
 		EndAt:     conf.EndAt,
-		Status:    cfg.StatusOpen,
+		Status:    status,
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -118,12 +90,14 @@ func New(conf cfg.AuctionConfig, store Store, pub Publisher, bl BidLog) (*Manage
 	go m.bidLogger()
 	return m, nil
 }
+
 func (m *Manager) Submit(ctx context.Context, b cfg.Bid) (cfg.Result, error) {
 	if b.AuctionID != m.conf.AuctionID {
 		return cfg.Result{BidID: b.BidID, Reason: cfg.ReasonNotFound}, nil
 	}
 	return m.engine.Submit(ctx, b)
 }
+
 func (m *Manager) bidLogger() {
 	defer close(m.logDone)
 	batch := make([]cfg.AcceptedBid, 0, 256)
@@ -161,12 +135,14 @@ func (m *Manager) appendWithRetry(batch []cfg.AcceptedBid) {
 	}
 	log.Printf("BID LOG LOST %d bids, first=%s", len(batch), batch[0].BidID)
 }
+
 // Done closes when the pump has exited (after the closed event). Useful in tests.
 func (m *Manager) Done() <-chan struct{} {
 	d := make(chan struct{})
 	go func() { <-m.pumpDone; <-m.logDone; close(d) }()
 	return d
 }
+
 // pump is the ONLY reader of the engine's events.
 // For each event: coalesce rapid updates, save state to the store, then publish.
 func (m *Manager) pump() {
@@ -205,11 +181,14 @@ func (m *Manager) flush(ev cfg.Event) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	err := m.store.SaveState(ctx, cfg.AuctionState{
 		AuctionID: ev.AuctionID,
+		Title:     m.conf.Title,
+		StartAt:   m.conf.StartAt,
 		Price:     ev.Price,
 		Version:   ev.Version,
 		StockLeft: ev.StockLeft,
 		EndAt:     m.conf.EndAt,
 		Status:    status,
+		Top:       ev.Top,
 	})
 	cancel()
 	if err != nil {
