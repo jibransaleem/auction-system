@@ -10,25 +10,30 @@ import (
 
 const leaderboardSize = 10
 
-// request wraps a single incoming Bid together with a private channel (reply)
-// used by the engine to send the answer back to the exact thread that asked for it.
 type request struct {
 	bid   cfg.Bid
 	reply chan cfg.Result
 }
 
+type ctrlCmd struct {
+	op    string // "configure" or "close"
+	conf  cfg.AuctionConfig
+	reply chan cfg.AuctionState
+}
+
 // Engine holds all live data for a single auction.
 type Engine struct {
-	conf    cfg.AuctionConfig
-	now     func() time.Time
-	topk    *top_k.TopK
-	bids    chan cfg.AcceptedBid
+	conf cfg.AuctionConfig
+	now  func() time.Time
+	topk *top_k.TopK
+	bids chan cfg.AcceptedBid
 
 	state   cfg.AuctionState
-	seen    map[string]struct{} // accepted BidIDs
+	seen    map[string]struct{}
 	winners []cfg.Bid
 
 	in     chan request
+	ctrl   chan ctrlCmd
 	events chan cfg.Event
 	done   chan struct{}
 }
@@ -56,7 +61,8 @@ func New(conf cfg.AuctionConfig) *Engine {
 		},
 		bids:   make(chan cfg.AcceptedBid, 65536),
 		seen:   make(map[string]struct{}),
-		in:     make(chan request, 4096), // absorbs bursts
+		in:     make(chan request, 4096),
+		ctrl:   make(chan ctrlCmd, 64),
 		events: make(chan cfg.Event, 4096),
 		done:   make(chan struct{}),
 	}
@@ -67,7 +73,7 @@ func New(conf cfg.AuctionConfig) *Engine {
 func (e *Engine) Bids() <-chan cfg.AcceptedBid { return e.bids }
 func (e *Engine) Events() <-chan cfg.Event       { return e.events }
 func (e *Engine) Done() <-chan struct{}          { return e.done }
-func (e *Engine) Winners() []cfg.Bid             { <-e.done; return e.winners } // safe only after close
+func (e *Engine) Winners() []cfg.Bid             { <-e.done; return e.winners }
 
 // Submit is the public entry point for incoming bids.
 func (e *Engine) Submit(ctx context.Context, b cfg.Bid) (cfg.Result, error) {
@@ -96,30 +102,162 @@ func (e *Engine) Submit(ctx context.Context, b cfg.Bid) (cfg.Result, error) {
 	}
 }
 
+// Configure updates the auction settings and resets live auction state.
+func (e *Engine) Configure(ctx context.Context, newConf cfg.AuctionConfig) (cfg.AuctionState, error) {
+	cmd := ctrlCmd{op: "configure", conf: newConf, reply: make(chan cfg.AuctionState, 1)}
+	select {
+	case e.ctrl <- cmd:
+	case <-e.done:
+		return e.state, nil
+	case <-ctx.Done():
+		return cfg.AuctionState{}, ctx.Err()
+	}
+
+	select {
+	case st := <-cmd.reply:
+		return st, nil
+	case <-e.done:
+		return e.state, nil
+	case <-ctx.Done():
+		return cfg.AuctionState{}, ctx.Err()
+	}
+}
+
+// CloseNow closes the auction immediately.
+func (e *Engine) CloseNow(ctx context.Context) (cfg.AuctionState, error) {
+	cmd := ctrlCmd{op: "close", reply: make(chan cfg.AuctionState, 1)}
+	select {
+	case e.ctrl <- cmd:
+	case <-e.done:
+		return e.state, nil
+	case <-ctx.Done():
+		return cfg.AuctionState{}, ctx.Err()
+	}
+
+	select {
+	case st := <-cmd.reply:
+		return st, nil
+	case <-e.done:
+		return e.state, nil
+	case <-ctx.Done():
+		return cfg.AuctionState{}, ctx.Err()
+	}
+}
+
+func resetTimer(t *time.Timer, d time.Duration) *time.Timer {
+	if d < 0 {
+		d = 0
+	}
+	if t == nil {
+		return time.NewTimer(d)
+	}
+	if !t.Stop() {
+		select {
+		case <-t.C:
+		default:
+		}
+	}
+	t.Reset(d)
+	return t
+}
+
+func armEndTimer(t *time.Timer, endAt time.Time, now time.Time) (*time.Timer, <-chan time.Time) {
+	if endAt.IsZero() {
+		if t != nil && !t.Stop() {
+			select {
+			case <-t.C:
+			default:
+			}
+		}
+		return t, nil
+	}
+	t = resetTimer(t, endAt.Sub(now))
+	return t, t.C
+}
+
 // ---------- the owner goroutine ----------
 
 func (e *Engine) run() {
+	now := e.now()
 	var startCh <-chan time.Time
 	var startTimer *time.Timer
-	if !e.conf.StartAt.IsZero() && e.now().Before(e.conf.StartAt) {
-		startTimer = time.NewTimer(e.conf.StartAt.Sub(e.now()))
+	if !e.conf.StartAt.IsZero() && now.Before(e.conf.StartAt) {
+		startTimer = resetTimer(startTimer, e.conf.StartAt.Sub(now))
 		startCh = startTimer.C
-		defer startTimer.Stop()
 	} else {
 		e.state.Status = cfg.StatusOpen
 	}
 
-	endTimer := time.NewTimer(e.conf.EndAt.Sub(e.now()))
-	defer endTimer.Stop()
+	var endTimer *time.Timer
+	var endCh <-chan time.Time
+	endTimer, endCh = armEndTimer(nil, e.conf.EndAt, now)
+
+	defer func() {
+		if startTimer != nil {
+			startTimer.Stop()
+		}
+		if endTimer != nil {
+			endTimer.Stop()
+		}
+	}()
 
 	for {
 		select {
 		case <-startCh:
 			e.state.Status = cfg.StatusOpen
 			startCh = nil
+
 		case req := <-e.in:
 			req.reply <- e.handle(req.bid)
-		case <-endTimer.C:
+
+		case cmd := <-e.ctrl:
+			switch cmd.op {
+			case "configure":
+				e.conf = cmd.conf
+				e.topk = top_k.New(cmd.conf)
+				e.seen = make(map[string]struct{})
+				e.winners = nil
+
+				now := e.now()
+				status := cfg.StatusOpen
+				if !cmd.conf.StartAt.IsZero() && now.Before(cmd.conf.StartAt) {
+					status = cfg.StatusScheduled
+					startTimer = resetTimer(startTimer, cmd.conf.StartAt.Sub(now))
+					startCh = startTimer.C
+				} else {
+					startCh = nil
+				}
+
+				endTimer, endCh = armEndTimer(endTimer, cmd.conf.EndAt, now)
+
+				e.state = cfg.AuctionState{
+					AuctionID: cmd.conf.AuctionID,
+					Title:     cmd.conf.Title,
+					StartAt:   cmd.conf.StartAt,
+					Price:     cmd.conf.MinimumPrice,
+					Version:   e.state.Version + 1,
+					StockLeft: cmd.conf.Stock,
+					EndAt:     cmd.conf.EndAt,
+					Status:    status,
+					Top:       nil,
+				}
+				e.emit(cfg.Event{
+					Kind:      cfg.EventConfigured,
+					AuctionID: e.conf.AuctionID,
+					Price:     e.state.Price,
+					StockLeft: e.state.StockLeft,
+					Version:   e.state.Version,
+					At:        now,
+				}, true)
+				cmd.reply <- e.state
+
+			case "close":
+				e.close()
+				cmd.reply <- e.state
+				return
+			}
+
+		case <-endCh:
 			e.close()
 			return
 		}
@@ -128,12 +266,12 @@ func (e *Engine) run() {
 
 func (e *Engine) handle(b cfg.Bid) cfg.Result {
 	now := e.now()
-	b.ReceivedAt = now // server time only
+	b.ReceivedAt = now
 
 	if !e.conf.StartAt.IsZero() && now.Before(e.conf.StartAt) {
 		return e.reject(b, cfg.ReasonNotStarted)
 	}
-	if !now.Before(e.conf.EndAt) {
+	if !e.conf.EndAt.IsZero() && !now.Before(e.conf.EndAt) {
 		return e.reject(b, cfg.ReasonClosed)
 	}
 	if _, dup := e.seen[b.BidID]; dup {
@@ -148,7 +286,7 @@ func (e *Engine) handle(b cfg.Bid) cfg.Result {
 	e.seen[b.BidID] = struct{}{}
 	e.state.Version++
 	e.state.Price = e.topk.MinToBeat()
-	e.state.StockLeft = e.conf.Stock - e.topk.Len()
+	e.state.StockLeft = e.conf.Stock - int(e.topk.Len())
 
 	top, rank := e.leaderboard(b.BidderID)
 	e.state.Top = top
@@ -180,7 +318,6 @@ func (e *Engine) handle(b cfg.Bid) cfg.Result {
 	}
 }
 
-// leaderboard returns the top entries (best first) and the rank of `who`.
 func (e *Engine) leaderboard(who string) ([]cfg.LeaderEntry, int) {
 	snap := e.topk.Snapshot()
 	rank := 0
@@ -201,7 +338,7 @@ func (e *Engine) reject(b cfg.Bid, why cfg.RejectReason) cfg.Result {
 		BidID:   b.BidID,
 		Reason:  why,
 		Price:   e.state.Price,
-		Version: e.state.Version, // lets the client refresh its UI
+		Version: e.state.Version,
 	}
 }
 
@@ -225,7 +362,6 @@ func (e *Engine) close() {
 		Top:       top,
 	}, true)
 
-	// answer anything still waiting in the queue
 	for {
 		select {
 		case req := <-e.in:
@@ -240,11 +376,11 @@ func (e *Engine) close() {
 
 func (e *Engine) emit(ev cfg.Event, mustDeliver bool) {
 	if mustDeliver {
-		e.events <- ev // closed event is never dropped
+		e.events <- ev
 		return
 	}
 	select {
 	case e.events <- ev:
-	default: // slow consumer; next update supersedes this one
+	default:
 	}
 }

@@ -7,19 +7,19 @@ import (
 	cfg "github.com/jibransaleem/auction-system/engine/configuration"
 )
 
-// RULES 
+// RULES
 // Tie-break: same amount means the earlier bid wins (compare ReceivedAt).
 // One slot per bidder: a bidder who bids again raises their own bid. They never take two slots.
 // Raising own bid needs at least old + MinIncrement.
 // Not full yet: minimum is StartPrice. Full: minimum is worst + MinIncrement.
-// Not thread-safe on purpose. Only the engine goroutine touches it 
+// Not thread-safe on purpose. Only the engine goroutine touches it.
 
 type entry struct {
 	bid   cfg.Bid
 	index int // position in heap, needed for heap.Fix
 }
 
-// better: higher amount wins; on tie the earlier bid wins.
+// worse reports whether a is worse than b: lower amount is worse; on tie, later ReceivedAt is worse.
 func worse(a, b cfg.Bid) bool {
 	if a.Amount != b.Amount {
 		return a.Amount < b.Amount
@@ -59,11 +59,15 @@ type TopK struct {
 }
 
 func New(c cfg.AuctionConfig) *TopK {
+	k := c.Stock
+	if k < 1 {
+		k = 1
+	}
 	return &TopK{
-		k:        c.Stock, // validate Stock >= 1 where you build the config
+		k:        k,
 		start:    c.MinimumPrice,
 		inc:      c.MinIncrement,
-		byBidder: make(map[string]*entry, c.Stock),
+		byBidder: make(map[string]*entry, k),
 	}
 }
 
@@ -80,13 +84,17 @@ type Outcome struct {
 
 // MinToBeat is the lowest amount a NEW bidder can bid right now.
 func (t *TopK) MinToBeat() int64 {
-	if len(t.h) < t.k {
+	if len(t.h) < t.k || len(t.h) == 0 {
 		return t.start
 	}
 	return t.h[0].bid.Amount + t.inc
 }
 
 func (t *TopK) Offer(b cfg.Bid) Outcome {
+	if b.BidderID == "" {
+		return Outcome{Reason: cfg.ReasonTooLow}
+	}
+
 	// 1. bidder already holds a slot: raise own bid
 	if e, ok := t.byBidder[b.BidderID]; ok {
 		if b.Amount < e.bid.Amount+t.inc {
@@ -117,10 +125,11 @@ func (t *TopK) Offer(b cfg.Bid) Outcome {
 	worst := heap.Pop(&t.h).(*entry)
 	delete(t.byBidder, worst.bid.BidderID)
 
+	evictedCopy := worst.bid
 	e := &entry{bid: b}
 	heap.Push(&t.h, e)
 	t.byBidder[b.BidderID] = e
-	return Outcome{Accepted: true, Evicted: &worst.bid}
+	return Outcome{Accepted: true, Evicted: &evictedCopy}
 }
 
 // Snapshot returns winners best-first. Used at close and for Winner rows.
@@ -133,9 +142,7 @@ func (t *TopK) Snapshot() []cfg.Bid {
 	return out
 }
 
-// Rank is 1 = best, 0 = not in top K. O(K), fine for small K.
-// Finds a specific bidder's position
-// If a user wants to check, "Where do I stand right now in the auction?", this function tells them.
+// Rank is 1 = best, 0 = not in top K. O(K log K), fine for small K.
 func (t *TopK) Rank(bidderID string) int {
 	for i, b := range t.Snapshot() {
 		if b.BidderID == bidderID {

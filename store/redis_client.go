@@ -1,4 +1,4 @@
-package  store
+package store
 
 import (
 	"bufio"
@@ -20,8 +20,8 @@ func LoadDotEnv() {
 		return
 	}
 	for {
-		if f, err := os.Open(filepath.Join(dir, ".env")); err == nil {
-			defer f.Close()
+		path := filepath.Join(dir, ".env")
+		if f, err := os.Open(path); err == nil {
 			sc := bufio.NewScanner(f)
 			for sc.Scan() {
 				line := strings.TrimSpace(sc.Text())
@@ -33,11 +33,15 @@ func LoadDotEnv() {
 					continue
 				}
 				k := strings.TrimSpace(kv[0])
+				if k == "" {
+					continue
+				}
 				v := strings.Trim(strings.TrimSpace(kv[1]), `"'`)
 				if os.Getenv(k) == "" {
 					_ = os.Setenv(k, v)
 				}
 			}
+			_ = f.Close()
 			return
 		}
 		parent := filepath.Dir(dir)
@@ -46,6 +50,11 @@ func LoadDotEnv() {
 		}
 		dir = parent
 	}
+}
+
+// UpdatesChannel returns the Redis Pub/Sub channel name for auction updates.
+func UpdatesChannel(auctionID string) string {
+	return "auction:" + auctionID + ":updates"
 }
 
 // NewRedisClient builds a client from REDIS_URL and checks it with a Ping.
@@ -65,7 +74,7 @@ func NewRedisClient() (*redis.Client, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := rdb.Ping(ctx).Err(); err != nil {
-		rdb.Close()
+		_ = rdb.Close()
 		return nil, err
 	}
 	return rdb, nil

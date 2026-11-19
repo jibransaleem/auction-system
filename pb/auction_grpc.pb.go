@@ -19,8 +19,10 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	BidEngine_PlaceBid_FullMethodName = "/auction.v1.BidEngine/PlaceBid"
-	BidEngine_GetState_FullMethodName = "/auction.v1.BidEngine/GetState"
+	BidEngine_PlaceBid_FullMethodName         = "/auction.v1.BidEngine/PlaceBid"
+	BidEngine_GetState_FullMethodName         = "/auction.v1.BidEngine/GetState"
+	BidEngine_ConfigureAuction_FullMethodName = "/auction.v1.BidEngine/ConfigureAuction"
+	BidEngine_CloseAuction_FullMethodName     = "/auction.v1.BidEngine/CloseAuction"
 )
 
 // BidEngineClient is the client API for BidEngine service.
@@ -29,6 +31,8 @@ const (
 type BidEngineClient interface {
 	PlaceBid(ctx context.Context, in *PlaceBidRequest, opts ...grpc.CallOption) (*PlaceBidResponse, error)
 	GetState(ctx context.Context, in *GetStateRequest, opts ...grpc.CallOption) (*GetStateResponse, error)
+	ConfigureAuction(ctx context.Context, in *ConfigureAuctionRequest, opts ...grpc.CallOption) (*ConfigureAuctionResponse, error)
+	CloseAuction(ctx context.Context, in *CloseAuctionRequest, opts ...grpc.CallOption) (*CloseAuctionResponse, error)
 }
 
 type bidEngineClient struct {
@@ -59,12 +63,34 @@ func (c *bidEngineClient) GetState(ctx context.Context, in *GetStateRequest, opt
 	return out, nil
 }
 
+func (c *bidEngineClient) ConfigureAuction(ctx context.Context, in *ConfigureAuctionRequest, opts ...grpc.CallOption) (*ConfigureAuctionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ConfigureAuctionResponse)
+	err := c.cc.Invoke(ctx, BidEngine_ConfigureAuction_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *bidEngineClient) CloseAuction(ctx context.Context, in *CloseAuctionRequest, opts ...grpc.CallOption) (*CloseAuctionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CloseAuctionResponse)
+	err := c.cc.Invoke(ctx, BidEngine_CloseAuction_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // BidEngineServer is the server API for BidEngine service.
 // All implementations must embed UnimplementedBidEngineServer
 // for forward compatibility.
 type BidEngineServer interface {
 	PlaceBid(context.Context, *PlaceBidRequest) (*PlaceBidResponse, error)
 	GetState(context.Context, *GetStateRequest) (*GetStateResponse, error)
+	ConfigureAuction(context.Context, *ConfigureAuctionRequest) (*ConfigureAuctionResponse, error)
+	CloseAuction(context.Context, *CloseAuctionRequest) (*CloseAuctionResponse, error)
 	mustEmbedUnimplementedBidEngineServer()
 }
 
@@ -80,6 +106,12 @@ func (UnimplementedBidEngineServer) PlaceBid(context.Context, *PlaceBidRequest) 
 }
 func (UnimplementedBidEngineServer) GetState(context.Context, *GetStateRequest) (*GetStateResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetState not implemented")
+}
+func (UnimplementedBidEngineServer) ConfigureAuction(context.Context, *ConfigureAuctionRequest) (*ConfigureAuctionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ConfigureAuction not implemented")
+}
+func (UnimplementedBidEngineServer) CloseAuction(context.Context, *CloseAuctionRequest) (*CloseAuctionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CloseAuction not implemented")
 }
 func (UnimplementedBidEngineServer) mustEmbedUnimplementedBidEngineServer() {}
 func (UnimplementedBidEngineServer) testEmbeddedByValue()                   {}
@@ -138,6 +170,42 @@ func _BidEngine_GetState_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _BidEngine_ConfigureAuction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConfigureAuctionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BidEngineServer).ConfigureAuction(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BidEngine_ConfigureAuction_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BidEngineServer).ConfigureAuction(ctx, req.(*ConfigureAuctionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _BidEngine_CloseAuction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CloseAuctionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BidEngineServer).CloseAuction(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BidEngine_CloseAuction_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BidEngineServer).CloseAuction(ctx, req.(*CloseAuctionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // BidEngine_ServiceDesc is the grpc.ServiceDesc for BidEngine service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -152,6 +220,14 @@ var BidEngine_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetState",
 			Handler:    _BidEngine_GetState_Handler,
+		},
+		{
+			MethodName: "ConfigureAuction",
+			Handler:    _BidEngine_ConfigureAuction_Handler,
+		},
+		{
+			MethodName: "CloseAuction",
+			Handler:    _BidEngine_CloseAuction_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -1,4 +1,5 @@
 package main
+
 import (
 	"context"
 	"errors"
@@ -9,8 +10,11 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
+
+	"github.com/jibransaleem/auction-system/engine/configuration"
 	"github.com/jibransaleem/auction-system/store"
 )
 
@@ -48,6 +52,9 @@ func parse(m redis.XMessage) (row, error) {
 
 // insertBatch saves many bids in ONE round trip. Duplicates are ignored.
 func insertBatch(ctx context.Context, pool *pgxpool.Pool, auctionID string, rows []row) error {
+	if len(rows) == 0 {
+		return nil
+	}
 	n := len(rows)
 	ids, aucs, bidders := make([]string, n), make([]string, n), make([]string, n)
 	amounts, versions := make([]int64, n), make([]int64, n)
@@ -76,14 +83,33 @@ func writeWinners(ctx context.Context, pool *pgxpool.Pool, auctionID string, sto
 		) best
 		ORDER BY amount DESC, at ASC
 		LIMIT $2
-		ON CONFLICT (auction_id, rank) DO NOTHING`, auctionID, stock)
+		ON CONFLICT (auction_id, rank) DO UPDATE SET
+			bidder_id = EXCLUDED.bidder_id,
+			amount = EXCLUDED.amount,
+			bid_at = EXCLUDED.bid_at`, auctionID, stock)
 	return err
+}
+
+func claimStale(ctx context.Context, rdb *redis.Client, stream, group, consumer string) ([]redis.XMessage, error) {
+	msgs, _, err := rdb.XAutoClaim(ctx, &redis.XAutoClaimArgs{
+		Stream:   stream,
+		Group:    group,
+		Consumer: consumer,
+		MinIdle:  30 * time.Second,
+		Start:    "0-0",
+		Count:    200,
+	}).Result()
+	if err != nil && !errors.Is(err, redis.Nil) {
+		return nil, err
+	}
+	return msgs, nil
 }
 
 func main() {
 	store.LoadDotEnv()
 	auctionID := env("AUCTION_ID", "a1")
 	stock, _ := strconv.Atoi(env("STOCK", "3")) // must match the engine's STOCK
+	exitOnClose := env("EXIT_ON_CLOSE", "true") == "true"
 
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
@@ -93,7 +119,6 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// Neon (tables already exist)
 	pool, err := pgxpool.New(ctx, dbURL)
 	if err != nil {
 		log.Fatalf("postgres: %v", err)
@@ -103,7 +128,6 @@ func main() {
 		log.Fatalf("postgres ping: %v", err)
 	}
 
-	// Redis (Upstash)
 	rdb, err := store.NewRedisClient()
 	if err != nil {
 		log.Fatalf("redis: %v", err)
@@ -118,65 +142,81 @@ func main() {
 	if err != nil && !strings.Contains(err.Error(), "BUSYGROUP") {
 		log.Fatalf("create group: %v", err)
 	}
-	log.Printf("persister: auction %q, stock %d", auctionID, stock)
+	log.Printf("persister: auction %q, stock %d, consumer %q", auctionID, stock, consumer)
 
-	pendingDone := false // first re-read anything received but never acked
+	pendingDone := false
+	winnersWritten := false
 	idle, total := 0, 0
+	lastClaim := time.Now().Add(-time.Minute)
 
 	for ctx.Err() == nil {
-		id := ">" // new entries
-		if !pendingDone {
-			id = "0" // our own unacked entries
-		}
-
-		res, err := rdb.XReadGroup(ctx, &redis.XReadGroupArgs{
-			Group:    group,
-			Consumer: consumer,
-			Streams:  []string{stream, id},
-			Count:    500,
-			Block:    time.Second,
-		}).Result()
-
 		var msgs []redis.XMessage
-		if err == nil && len(res) > 0 {
-			msgs = res[0].Messages
-		} else if err != nil && !errors.Is(err, redis.Nil) {
-			if ctx.Err() != nil {
-				break
+
+		if time.Since(lastClaim) >= 15*time.Second {
+			lastClaim = time.Now()
+			if claimed, err := claimStale(ctx, rdb, stream, group, consumer); err == nil && len(claimed) > 0 {
+				msgs = claimed
 			}
-			log.Printf("read: %v", err)
-			time.Sleep(time.Second)
-			continue
 		}
 
-		// nothing to process
+		if len(msgs) == 0 {
+			id := ">"
+			if !pendingDone {
+				id = "0"
+			}
+
+			res, err := rdb.XReadGroup(ctx, &redis.XReadGroupArgs{
+				Group:    group,
+				Consumer: consumer,
+				Streams:  []string{stream, id},
+				Count:    500,
+				Block:    time.Second,
+			}).Result()
+
+			if err == nil && len(res) > 0 {
+				msgs = res[0].Messages
+			} else if err != nil && !errors.Is(err, redis.Nil) {
+				if ctx.Err() != nil {
+					break
+				}
+				log.Printf("read: %v", err)
+				time.Sleep(time.Second)
+				continue
+			}
+		}
+
 		if len(msgs) == 0 {
 			if !pendingDone {
 				pendingDone = true
 				continue
 			}
 			idle++
-			if idle >= 3 { // quiet for ~3 seconds: has the auction closed?
-				status, _ := rdb.HGet(ctx, stateKey, "status").Result()
-				if status == "closed" {
-					if err := writeWinners(ctx, pool, auctionID, stock); err != nil {
-						log.Printf("winners: %v", err)
+			if idle >= 3 {
+				status, err := rdb.HGet(ctx, stateKey, "status").Result()
+				if err == nil && status == string(configuration.StatusClosed) && !winnersWritten {
+					wctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+					werr := writeWinners(wctx, pool, auctionID, stock)
+					cancel()
+					if werr != nil {
+						log.Printf("winners: %v", werr)
 						continue
 					}
-					log.Printf("auction closed, winners written (%d bids saved). done.", total)
-					return
+					winnersWritten = true
+					log.Printf("auction closed, winners written (%d bids saved)", total)
+					if exitOnClose {
+						return
+					}
 				}
 			}
 			continue
 		}
 		idle = 0
 
-		// parse
 		rows := make([]row, 0, len(msgs))
 		ackIDs := make([]string, 0, len(msgs))
 		for _, m := range msgs {
 			r, err := parse(m)
-			ackIDs = append(ackIDs, m.ID) // ack bad entries too, so we never get stuck
+			ackIDs = append(ackIDs, m.ID)
 			if err != nil {
 				log.Printf("skipping: %v", err)
 				continue
@@ -184,21 +224,25 @@ func main() {
 			rows = append(rows, r)
 		}
 
-		// save, then ack (never the other way around)
 		if len(rows) > 0 {
-			ictx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			ictx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			err := insertBatch(ictx, pool, auctionID, rows)
 			cancel()
 			if err != nil {
 				log.Printf("insert failed, will retry: %v", err)
-				pendingDone = false // re-read the unacked entries next loop
+				pendingDone = false
 				time.Sleep(time.Second)
 				continue
 			}
 		}
-		if err := rdb.XAck(ctx, stream, group, ackIDs...).Err(); err != nil {
+
+		actx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		err = rdb.XAck(actx, stream, group, ackIDs...).Err()
+		cancel()
+		if err != nil {
 			log.Printf("ack: %v", err)
 		}
+
 		total += len(rows)
 		log.Printf("saved %d bids (total %d)", len(rows), total)
 	}

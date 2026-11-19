@@ -40,41 +40,66 @@ func main() {
 	if err != nil {
 		log.Fatalf("redis: %v", err)
 	}
-	defer rdb.Close()
 	st := store.NewRedisStore(rdb)
 
 	startDelay, err := time.ParseDuration(envStr("AUCTION_START_DELAY", "0s"))
 	if err != nil {
+		_ = rdb.Close()
 		log.Fatalf("bad AUCTION_START_DELAY: %v", err)
 	}
 
 	dur, err := time.ParseDuration(envStr("AUCTION_DURATION", "5m"))
 	if err != nil {
+		_ = rdb.Close()
 		log.Fatalf("bad AUCTION_DURATION: %v", err)
 	}
+	if dur <= 0 {
+		_ = rdb.Close()
+		log.Fatalf("AUCTION_DURATION must be > 0, got %s", dur)
+	}
 
-	start := time.Now().Add(startDelay)
+	minPrice := envInt("MIN_PRICE", 100)
+	if minPrice <= 0 {
+		_ = rdb.Close()
+		log.Fatalf("MIN_PRICE must be > 0, got %d", minPrice)
+	}
 
-	// field names must match your configuration.AuctionConfig
+	minInc := envInt("MIN_INCREMENT", 10)
+	if minInc <= 0 {
+		_ = rdb.Close()
+		log.Fatalf("MIN_INCREMENT must be > 0, got %d", minInc)
+	}
+
+	stock := int(envInt("STOCK", 3))
+	if stock < 1 {
+		_ = rdb.Close()
+		log.Fatalf("STOCK must be >= 1, got %d", stock)
+	}
+
+	now := time.Now()
+	start := now.Add(startDelay)
+
 	conf := cfg.AuctionConfig{
 		AuctionID:    envStr("AUCTION_ID", "a1"),
 		Title:        envStr("AUCTION_TITLE", "Flash auction"),
-		MinimumPrice: envInt("MIN_PRICE", 100),
-		MinIncrement: envInt("MIN_INCREMENT", 10),
-		Stock:        int(envInt("STOCK", 3)),
+		MinimumPrice: minPrice,
+		MinIncrement: minInc,
+		Stock:        stock,
 		StartAt:      start,
-		EndAt:        start.Add(dur), // duration now counts from the start time
+		EndAt:        start.Add(dur),
 		FinalWindow:  10 * time.Second,
 	}
 
 	mgr, err := manager.New(conf, st, store.NewRedisPublisher(rdb), store.NewRedisBidLog(rdb))
 	if err != nil {
+		_ = rdb.Close()
 		log.Fatalf("manager: %v", err)
 	}
 
 	addr := envStr("GRPC_ADDR", ":50051")
 	lis, err := net.Listen("tcp", addr)
 	if err != nil {
+		_ = rdb.Close()
 		log.Fatalf("listen %s: %v", addr, err)
 	}
 
@@ -82,10 +107,12 @@ func main() {
 	pb.RegisterBidEngineServer(g, grpcserver.New(mgr, st))
 	reflection.Register(g) // lets grpcurl work without the .proto file
 
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+
 	go func() {
-		sig := make(chan os.Signal, 1)
-		signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-		<-sig
+		<-sigCh
 		log.Println("shutting down")
 		g.GracefulStop()
 	}()
@@ -93,6 +120,11 @@ func main() {
 	log.Printf("engine: auction %q starts at %s, ends at %s, gRPC on %s",
 		conf.AuctionID, conf.StartAt.Format(time.RFC3339), conf.EndAt.Format(time.RFC3339), addr)
 	if err := g.Serve(lis); err != nil {
+		_ = rdb.Close()
 		log.Fatalf("serve: %v", err)
+	}
+
+	if err := rdb.Close(); err != nil {
+		log.Printf("close redis: %v", err)
 	}
 }

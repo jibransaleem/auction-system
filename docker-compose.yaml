@@ -3,13 +3,19 @@ x-gateway: &gateway
     context: .
     args:
       PKG: ./cmd/gateway
-  env_file: .env
+  image: auction-gateway:local
+  env_file:
+    - .env
   environment:
-    ENGINE_ADDR: engine:50051
-    AUCTION_ID: ${AUCTION_ID:-a300}
+    ENGINE_ADDR: "auction-engine:50051"
+    GATEWAY_ADDR: ":8080"
+    AUCTION_ID: "a1"
+    AUCTION_TITLE: "Flash auction"
   depends_on:
     - engine
-  restart: on-failure
+  networks:
+    - auction-net
+  restart: unless-stopped
 
 services:
   engine:
@@ -17,11 +23,24 @@ services:
       context: .
       args:
         PKG: .
-    env_file: .env
+    image: auction-engine:local
+    container_name: auction-engine
+    env_file:
+      - .env
     environment:
-      AUCTION_ID: ${AUCTION_ID:-a300}
-      AUCTION_DURATION: ${AUCTION_DURATION:-20m}
-      STOCK: ${STOCK:-3}
+      GRPC_ADDR: ":50051"
+      AUCTION_ID: "a1"
+      AUCTION_TITLE: "Flash auction"
+      MIN_PRICE: "100"
+      MIN_INCREMENT: "10"
+      STOCK: "3"
+      AUCTION_START_DELAY: "0s"
+      AUCTION_DURATION: "${AUCTION_DURATION:-20m}"
+    ports:
+      - "50051:50051"
+    networks:
+      - auction-net
+    restart: unless-stopped
 
   gateway1:
     <<: *gateway
@@ -39,14 +58,24 @@ services:
       context: .
       args:
         PKG: ./cmd/persister
-    env_file: .env
+    image: auction-persister:local
+    container_name: auction-persister
+    depends_on:
+      - engine
+    env_file:
+      - .env
     environment:
-      AUCTION_ID: ${AUCTION_ID:-a300}
-      STOCK: ${STOCK:-3}
-    restart: on-failure
+      AUCTION_ID: "a1"
+      STOCK: "3"
+      CONSUMER: "p1"
+      EXIT_ON_CLOSE: "false"
+    networks:
+      - auction-net
+    restart: unless-stopped
 
   nginx:
     image: nginx:1.27-alpine
+    container_name: auction-nginx
     ports:
       - "8080:80"
     volumes:
@@ -57,4 +86,11 @@ services:
       - gateway3
       - gateway4
       - gateway5
-    restart: on-failure
+    networks:
+      - auction-net
+    restart: unless-stopped
+
+networks:
+  auction-net:
+    name: auction-net
+    driver: bridge

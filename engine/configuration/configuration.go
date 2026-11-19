@@ -2,7 +2,7 @@ package configuration
 
 import "time"
 
-// Initial auction configuration
+// Initial auction configuration.
 type AuctionConfig struct {
 	AuctionID    string        `json:"auction_id"`
 	Title        string        `json:"title"`
@@ -14,7 +14,15 @@ type AuctionConfig struct {
 	FinalWindow  time.Duration `json:"final_window"`
 }
 
-// Incoming bid
+// InFinalWindow reports whether now falls within [EndAt-FinalWindow, EndAt).
+func (c AuctionConfig) InFinalWindow(now time.Time) bool {
+	if c.EndAt.IsZero() || c.FinalWindow <= 0 {
+		return false
+	}
+	return !now.Before(c.EndAt.Add(-c.FinalWindow)) && now.Before(c.EndAt)
+}
+
+// Incoming bid.
 type Bid struct {
 	AuctionID  string    `json:"auction_id"`
 	BidID      string    `json:"bid_id"`
@@ -33,7 +41,7 @@ type AcceptedBid struct {
 	At        time.Time `json:"at"`
 }
 
-// Auction status
+// Auction status.
 type AuctionStatus string
 
 const (
@@ -42,14 +50,14 @@ const (
 	StatusClosed    AuctionStatus = "closed"
 )
 
-// Leaderboard entry
+// Leaderboard entry.
 type LeaderEntry struct {
 	Rank     int    `json:"rank"`
 	BidderID string `json:"bidder"`
 	Amount   int64  `json:"amount"`
 }
 
-// Current auction state
+// Current auction state.
 type AuctionState struct {
 	AuctionID string        `json:"auction_id"`
 	Title     string        `json:"title"`
@@ -62,7 +70,7 @@ type AuctionState struct {
 	Top       []LeaderEntry `json:"top,omitempty"`
 }
 
-// Bid rejection reasons
+// Bid rejection reasons.
 type RejectReason string
 
 const (
@@ -74,7 +82,7 @@ const (
 	ReasonNotFound   RejectReason = "auction_not_found"
 )
 
-// Result returned after processing a bid
+// Result returned after processing a bid.
 type Result struct {
 	BidID    string       `json:"bid_id"`
 	Accepted bool         `json:"accepted"`
@@ -84,33 +92,38 @@ type Result struct {
 	Rank     int          `json:"rank,omitempty"`
 }
 
-// Events sent to connected clients
+// Events sent to connected clients.
 type EventKind string
 
 const (
 	EventPriceUpdate EventKind = "price_update"
 	EventClosed      EventKind = "closed"
+	EventConfigured  EventKind = "auction_configured"
 )
 
 type Event struct {
-	Kind      EventKind     `json:"kind"`
-	AuctionID string        `json:"auction_id"`
-	Price     int64         `json:"price"`
-	Version   uint64        `json:"version"`
-	StockLeft int           `json:"stock_left"`
-	At        time.Time     `json:"at"`
-	Top       []LeaderEntry `json:"top,omitempty"`
+	Kind        EventKind     `json:"kind"`
+	AuctionID   string        `json:"auction_id"`
+	Title       string        `json:"title,omitempty"`
+	Status      string        `json:"status,omitempty"`
+	Price       int64         `json:"price"`
+	StartPrice  int64         `json:"start_price,omitempty"`
+	MinRaise    int64         `json:"min_raise,omitempty"`
+	WinnerCount int           `json:"winner_count,omitempty"`
+	Version     uint64        `json:"version"`
+	StockLeft   int           `json:"stock_left"`
+	StartsAtMs  int64         `json:"starts_at_ms,omitempty"`
+	EndsAtMs    int64         `json:"ends_at_ms,omitempty"`
+	DurationSec int64         `json:"duration_sec,omitempty"`
+	At          time.Time     `json:"at"`
+	Top         []LeaderEntry `json:"top,omitempty"`
 }
 
-// Auction winner information
+// Auction winner information.
 type Winner struct {
 	AuctionID string    `json:"auction_id"`
 	BidderID  string    `json:"bidder_id"`
 	Amount    int64     `json:"amount"`
 	Rank      int       `json:"rank"`
 	WonAt     time.Time `json:"won_at"`
-}
-
-func (c AuctionConfig) InFinalWindow(now time.Time) bool {
-	return !now.Before(c.EndAt.Add(-c.FinalWindow)) && now.Before(c.EndAt)
 }

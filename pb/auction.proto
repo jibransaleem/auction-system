@@ -1,11 +1,14 @@
 syntax = "proto3";
 
 package auction.v1;
-option go_package = "github.com/jibransaleem/auction-system/engine/pb";
+
+option go_package = "github.com/jibransaleem/auction-system/pb;pb";
 
 service BidEngine {
   rpc PlaceBid(PlaceBidRequest) returns (PlaceBidResponse);
   rpc GetState(GetStateRequest) returns (GetStateResponse);
+  rpc ConfigureAuction(ConfigureAuctionRequest) returns (ConfigureAuctionResponse);
+  rpc CloseAuction(CloseAuctionRequest) returns (CloseAuctionResponse);
 }
 
 message PlaceBidRequest {
@@ -18,13 +21,15 @@ message PlaceBidRequest {
 message PlaceBidResponse {
   string bid_id   = 1;
   bool   accepted = 2;
-  string reason   = 3;   // "", too_low, closed, duplicate, auction_not_found
-  int64  price    = 4;   // price to beat after this bid
+  string reason   = 3; // "", not_started, too_low, closed, duplicate, auction_not_found
+  int64  price    = 4; // price to beat after this bid
   uint64 version  = 5;
   int32  rank     = 6;
 }
 
-message GetStateRequest { string auction_id = 1; }
+message GetStateRequest {
+  string auction_id = 1;
+}
 
 message GetStateResponse {
   string auction_id      = 1;
@@ -33,4 +38,37 @@ message GetStateResponse {
   int32  stock_left      = 4;
   int64  ends_at_unix_ms = 5;
   string status          = 6;
+}
+
+message ConfigureAuctionRequest {
+  string auction_id   = 1;
+  string title        = 2;
+  int64  start_price  = 3;
+  int64  min_raise    = 4;
+  int32  winner_count = 5;
+  int64  starts_at_ms = 6;
+  int64  ends_at_ms   = 7;
+  int64  duration_sec = 8;
+}
+
+message ConfigureAuctionResponse {
+  bool   ok              = 1;
+  string status          = 2;
+  int64  price           = 3;
+  uint64 version         = 4;
+  int32  stock_left      = 5;
+  int64  ends_at_unix_ms = 6;
+}
+
+message CloseAuctionRequest {
+  string auction_id = 1;
+}
+
+message CloseAuctionResponse {
+  bool   ok              = 1;
+  string status          = 2;
+  int64  price           = 3;
+  uint64 version         = 4;
+  int32  stock_left      = 5;
+  int64  ends_at_unix_ms = 6;
 }

@@ -93,7 +93,7 @@ type PlaceBidResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	BidId         string                 `protobuf:"bytes,1,opt,name=bid_id,json=bidId,proto3" json:"bid_id,omitempty"`
 	Accepted      bool                   `protobuf:"varint,2,opt,name=accepted,proto3" json:"accepted,omitempty"`
-	Reason        string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"` // "", too_low, closed, duplicate, auction_not_found
+	Reason        string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"` // "", not_started, too_low, closed, duplicate, auction_not_found
 	Price         int64                  `protobuf:"varint,4,opt,name=price,proto3" json:"price,omitempty"`  // price to beat after this bid
 	Version       uint64                 `protobuf:"varint,5,opt,name=version,proto3" json:"version,omitempty"`
 	Rank          int32                  `protobuf:"varint,6,opt,name=rank,proto3" json:"rank,omitempty"`
@@ -301,6 +301,318 @@ func (x *GetStateResponse) GetStatus() string {
 	return ""
 }
 
+type ConfigureAuctionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AuctionId     string                 `protobuf:"bytes,1,opt,name=auction_id,json=auctionId,proto3" json:"auction_id,omitempty"`
+	Title         string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	StartPrice    int64                  `protobuf:"varint,3,opt,name=start_price,json=startPrice,proto3" json:"start_price,omitempty"`
+	MinRaise      int64                  `protobuf:"varint,4,opt,name=min_raise,json=minRaise,proto3" json:"min_raise,omitempty"`
+	WinnerCount   int32                  `protobuf:"varint,5,opt,name=winner_count,json=winnerCount,proto3" json:"winner_count,omitempty"`
+	StartsAtMs    int64                  `protobuf:"varint,6,opt,name=starts_at_ms,json=startsAtMs,proto3" json:"starts_at_ms,omitempty"`
+	EndsAtMs      int64                  `protobuf:"varint,7,opt,name=ends_at_ms,json=endsAtMs,proto3" json:"ends_at_ms,omitempty"`
+	DurationSec   int64                  `protobuf:"varint,8,opt,name=duration_sec,json=durationSec,proto3" json:"duration_sec,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConfigureAuctionRequest) Reset() {
+	*x = ConfigureAuctionRequest{}
+	mi := &file_pb_auction_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConfigureAuctionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConfigureAuctionRequest) ProtoMessage() {}
+
+func (x *ConfigureAuctionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pb_auction_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConfigureAuctionRequest.ProtoReflect.Descriptor instead.
+func (*ConfigureAuctionRequest) Descriptor() ([]byte, []int) {
+	return file_pb_auction_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ConfigureAuctionRequest) GetAuctionId() string {
+	if x != nil {
+		return x.AuctionId
+	}
+	return ""
+}
+
+func (x *ConfigureAuctionRequest) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *ConfigureAuctionRequest) GetStartPrice() int64 {
+	if x != nil {
+		return x.StartPrice
+	}
+	return 0
+}
+
+func (x *ConfigureAuctionRequest) GetMinRaise() int64 {
+	if x != nil {
+		return x.MinRaise
+	}
+	return 0
+}
+
+func (x *ConfigureAuctionRequest) GetWinnerCount() int32 {
+	if x != nil {
+		return x.WinnerCount
+	}
+	return 0
+}
+
+func (x *ConfigureAuctionRequest) GetStartsAtMs() int64 {
+	if x != nil {
+		return x.StartsAtMs
+	}
+	return 0
+}
+
+func (x *ConfigureAuctionRequest) GetEndsAtMs() int64 {
+	if x != nil {
+		return x.EndsAtMs
+	}
+	return 0
+}
+
+func (x *ConfigureAuctionRequest) GetDurationSec() int64 {
+	if x != nil {
+		return x.DurationSec
+	}
+	return 0
+}
+
+type ConfigureAuctionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	Status        string                 `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
+	Price         int64                  `protobuf:"varint,3,opt,name=price,proto3" json:"price,omitempty"`
+	Version       uint64                 `protobuf:"varint,4,opt,name=version,proto3" json:"version,omitempty"`
+	StockLeft     int32                  `protobuf:"varint,5,opt,name=stock_left,json=stockLeft,proto3" json:"stock_left,omitempty"`
+	EndsAtUnixMs  int64                  `protobuf:"varint,6,opt,name=ends_at_unix_ms,json=endsAtUnixMs,proto3" json:"ends_at_unix_ms,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConfigureAuctionResponse) Reset() {
+	*x = ConfigureAuctionResponse{}
+	mi := &file_pb_auction_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConfigureAuctionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConfigureAuctionResponse) ProtoMessage() {}
+
+func (x *ConfigureAuctionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pb_auction_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConfigureAuctionResponse.ProtoReflect.Descriptor instead.
+func (*ConfigureAuctionResponse) Descriptor() ([]byte, []int) {
+	return file_pb_auction_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ConfigureAuctionResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *ConfigureAuctionResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *ConfigureAuctionResponse) GetPrice() int64 {
+	if x != nil {
+		return x.Price
+	}
+	return 0
+}
+
+func (x *ConfigureAuctionResponse) GetVersion() uint64 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+func (x *ConfigureAuctionResponse) GetStockLeft() int32 {
+	if x != nil {
+		return x.StockLeft
+	}
+	return 0
+}
+
+func (x *ConfigureAuctionResponse) GetEndsAtUnixMs() int64 {
+	if x != nil {
+		return x.EndsAtUnixMs
+	}
+	return 0
+}
+
+type CloseAuctionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AuctionId     string                 `protobuf:"bytes,1,opt,name=auction_id,json=auctionId,proto3" json:"auction_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CloseAuctionRequest) Reset() {
+	*x = CloseAuctionRequest{}
+	mi := &file_pb_auction_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CloseAuctionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CloseAuctionRequest) ProtoMessage() {}
+
+func (x *CloseAuctionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pb_auction_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CloseAuctionRequest.ProtoReflect.Descriptor instead.
+func (*CloseAuctionRequest) Descriptor() ([]byte, []int) {
+	return file_pb_auction_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *CloseAuctionRequest) GetAuctionId() string {
+	if x != nil {
+		return x.AuctionId
+	}
+	return ""
+}
+
+type CloseAuctionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	Status        string                 `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
+	Price         int64                  `protobuf:"varint,3,opt,name=price,proto3" json:"price,omitempty"`
+	Version       uint64                 `protobuf:"varint,4,opt,name=version,proto3" json:"version,omitempty"`
+	StockLeft     int32                  `protobuf:"varint,5,opt,name=stock_left,json=stockLeft,proto3" json:"stock_left,omitempty"`
+	EndsAtUnixMs  int64                  `protobuf:"varint,6,opt,name=ends_at_unix_ms,json=endsAtUnixMs,proto3" json:"ends_at_unix_ms,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CloseAuctionResponse) Reset() {
+	*x = CloseAuctionResponse{}
+	mi := &file_pb_auction_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CloseAuctionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CloseAuctionResponse) ProtoMessage() {}
+
+func (x *CloseAuctionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pb_auction_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CloseAuctionResponse.ProtoReflect.Descriptor instead.
+func (*CloseAuctionResponse) Descriptor() ([]byte, []int) {
+	return file_pb_auction_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *CloseAuctionResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *CloseAuctionResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *CloseAuctionResponse) GetPrice() int64 {
+	if x != nil {
+		return x.Price
+	}
+	return 0
+}
+
+func (x *CloseAuctionResponse) GetVersion() uint64 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+func (x *CloseAuctionResponse) GetStockLeft() int32 {
+	if x != nil {
+		return x.StockLeft
+	}
+	return 0
+}
+
+func (x *CloseAuctionResponse) GetEndsAtUnixMs() int64 {
+	if x != nil {
+		return x.EndsAtUnixMs
+	}
+	return 0
+}
+
 var File_pb_auction_proto protoreflect.FileDescriptor
 
 const file_pb_auction_proto_rawDesc = "" +
@@ -331,10 +643,44 @@ const file_pb_auction_proto_rawDesc = "" +
 	"\n" +
 	"stock_left\x18\x04 \x01(\x05R\tstockLeft\x12%\n" +
 	"\x0fends_at_unix_ms\x18\x05 \x01(\x03R\fendsAtUnixMs\x12\x16\n" +
-	"\x06status\x18\x06 \x01(\tR\x06status2\x99\x01\n" +
+	"\x06status\x18\x06 \x01(\tR\x06status\"\x92\x02\n" +
+	"\x17ConfigureAuctionRequest\x12\x1d\n" +
+	"\n" +
+	"auction_id\x18\x01 \x01(\tR\tauctionId\x12\x14\n" +
+	"\x05title\x18\x02 \x01(\tR\x05title\x12\x1f\n" +
+	"\vstart_price\x18\x03 \x01(\x03R\n" +
+	"startPrice\x12\x1b\n" +
+	"\tmin_raise\x18\x04 \x01(\x03R\bminRaise\x12!\n" +
+	"\fwinner_count\x18\x05 \x01(\x05R\vwinnerCount\x12 \n" +
+	"\fstarts_at_ms\x18\x06 \x01(\x03R\n" +
+	"startsAtMs\x12\x1c\n" +
+	"\n" +
+	"ends_at_ms\x18\a \x01(\x03R\bendsAtMs\x12!\n" +
+	"\fduration_sec\x18\b \x01(\x03R\vdurationSec\"\xb8\x01\n" +
+	"\x18ConfigureAuctionResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x16\n" +
+	"\x06status\x18\x02 \x01(\tR\x06status\x12\x14\n" +
+	"\x05price\x18\x03 \x01(\x03R\x05price\x12\x18\n" +
+	"\aversion\x18\x04 \x01(\x04R\aversion\x12\x1d\n" +
+	"\n" +
+	"stock_left\x18\x05 \x01(\x05R\tstockLeft\x12%\n" +
+	"\x0fends_at_unix_ms\x18\x06 \x01(\x03R\fendsAtUnixMs\"4\n" +
+	"\x13CloseAuctionRequest\x12\x1d\n" +
+	"\n" +
+	"auction_id\x18\x01 \x01(\tR\tauctionId\"\xb4\x01\n" +
+	"\x14CloseAuctionResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x16\n" +
+	"\x06status\x18\x02 \x01(\tR\x06status\x12\x14\n" +
+	"\x05price\x18\x03 \x01(\x03R\x05price\x12\x18\n" +
+	"\aversion\x18\x04 \x01(\x04R\aversion\x12\x1d\n" +
+	"\n" +
+	"stock_left\x18\x05 \x01(\x05R\tstockLeft\x12%\n" +
+	"\x0fends_at_unix_ms\x18\x06 \x01(\x03R\fendsAtUnixMs2\xcb\x02\n" +
 	"\tBidEngine\x12E\n" +
 	"\bPlaceBid\x12\x1b.auction.v1.PlaceBidRequest\x1a\x1c.auction.v1.PlaceBidResponse\x12E\n" +
-	"\bGetState\x12\x1b.auction.v1.GetStateRequest\x1a\x1c.auction.v1.GetStateResponseB2Z0github.com/jibransaleem/auction-system/engine/pbb\x06proto3"
+	"\bGetState\x12\x1b.auction.v1.GetStateRequest\x1a\x1c.auction.v1.GetStateResponse\x12]\n" +
+	"\x10ConfigureAuction\x12#.auction.v1.ConfigureAuctionRequest\x1a$.auction.v1.ConfigureAuctionResponse\x12Q\n" +
+	"\fCloseAuction\x12\x1f.auction.v1.CloseAuctionRequest\x1a .auction.v1.CloseAuctionResponseB.Z,github.com/jibransaleem/auction-system/pb;pbb\x06proto3"
 
 var (
 	file_pb_auction_proto_rawDescOnce sync.Once
@@ -348,20 +694,28 @@ func file_pb_auction_proto_rawDescGZIP() []byte {
 	return file_pb_auction_proto_rawDescData
 }
 
-var file_pb_auction_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_pb_auction_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_pb_auction_proto_goTypes = []any{
-	(*PlaceBidRequest)(nil),  // 0: auction.v1.PlaceBidRequest
-	(*PlaceBidResponse)(nil), // 1: auction.v1.PlaceBidResponse
-	(*GetStateRequest)(nil),  // 2: auction.v1.GetStateRequest
-	(*GetStateResponse)(nil), // 3: auction.v1.GetStateResponse
+	(*PlaceBidRequest)(nil),          // 0: auction.v1.PlaceBidRequest
+	(*PlaceBidResponse)(nil),         // 1: auction.v1.PlaceBidResponse
+	(*GetStateRequest)(nil),          // 2: auction.v1.GetStateRequest
+	(*GetStateResponse)(nil),         // 3: auction.v1.GetStateResponse
+	(*ConfigureAuctionRequest)(nil),  // 4: auction.v1.ConfigureAuctionRequest
+	(*ConfigureAuctionResponse)(nil), // 5: auction.v1.ConfigureAuctionResponse
+	(*CloseAuctionRequest)(nil),      // 6: auction.v1.CloseAuctionRequest
+	(*CloseAuctionResponse)(nil),     // 7: auction.v1.CloseAuctionResponse
 }
 var file_pb_auction_proto_depIdxs = []int32{
 	0, // 0: auction.v1.BidEngine.PlaceBid:input_type -> auction.v1.PlaceBidRequest
 	2, // 1: auction.v1.BidEngine.GetState:input_type -> auction.v1.GetStateRequest
-	1, // 2: auction.v1.BidEngine.PlaceBid:output_type -> auction.v1.PlaceBidResponse
-	3, // 3: auction.v1.BidEngine.GetState:output_type -> auction.v1.GetStateResponse
-	2, // [2:4] is the sub-list for method output_type
-	0, // [0:2] is the sub-list for method input_type
+	4, // 2: auction.v1.BidEngine.ConfigureAuction:input_type -> auction.v1.ConfigureAuctionRequest
+	6, // 3: auction.v1.BidEngine.CloseAuction:input_type -> auction.v1.CloseAuctionRequest
+	1, // 4: auction.v1.BidEngine.PlaceBid:output_type -> auction.v1.PlaceBidResponse
+	3, // 5: auction.v1.BidEngine.GetState:output_type -> auction.v1.GetStateResponse
+	5, // 6: auction.v1.BidEngine.ConfigureAuction:output_type -> auction.v1.ConfigureAuctionResponse
+	7, // 7: auction.v1.BidEngine.CloseAuction:output_type -> auction.v1.CloseAuctionResponse
+	4, // [4:8] is the sub-list for method output_type
+	0, // [0:4] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
@@ -378,7 +732,7 @@ func file_pb_auction_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pb_auction_proto_rawDesc), len(file_pb_auction_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"github.com/redis/go-redis/v9"
 
@@ -13,9 +14,10 @@ type RedisPublisher struct{ rdb *redis.Client }
 
 func NewRedisPublisher(rdb *redis.Client) *RedisPublisher { return &RedisPublisher{rdb: rdb} }
 
-func UpdatesChannel(id string) string { return "auction:" + id + ":updates" }
-
 func (p *RedisPublisher) Publish(ctx context.Context, ev cfg.Event) error {
+	if p == nil || p.rdb == nil {
+		return errors.New("redis client is nil")
+	}
 	b, err := json.Marshal(ev)
 	if err != nil {
 		return err
