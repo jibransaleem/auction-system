@@ -13,8 +13,8 @@ import (
 	"google.golang.org/grpc/reflection"
 
 	cfg "github.com/jibransaleem/auction-system/engine/configuration"
-	"github.com/jibransaleem/auction-system/grpcserver"
 	"github.com/jibransaleem/auction-system/engine/manager"
+	"github.com/jibransaleem/auction-system/grpcserver"
 	"github.com/jibransaleem/auction-system/pb"
 	"github.com/jibransaleem/auction-system/store"
 )
@@ -43,22 +43,30 @@ func main() {
 	defer rdb.Close()
 	st := store.NewRedisStore(rdb)
 
+	startDelay, err := time.ParseDuration(envStr("AUCTION_START_DELAY", "0s"))
+	if err != nil {
+		log.Fatalf("bad AUCTION_START_DELAY: %v", err)
+	}
+
 	dur, err := time.ParseDuration(envStr("AUCTION_DURATION", "5m"))
 	if err != nil {
 		log.Fatalf("bad AUCTION_DURATION: %v", err)
 	}
 
+	start := time.Now().Add(startDelay)
+
 	// field names must match your configuration.AuctionConfig
 	conf := cfg.AuctionConfig{
 		AuctionID:    envStr("AUCTION_ID", "a1"),
+		Title:        envStr("AUCTION_TITLE", "Flash auction"),
 		MinimumPrice: envInt("MIN_PRICE", 100),
 		MinIncrement: envInt("MIN_INCREMENT", 10),
 		Stock:        int(envInt("STOCK", 3)),
-		EndAt:        time.Now().Add(dur),
+		StartAt:      start,
+		EndAt:        start.Add(dur), // duration now counts from the start time
 		FinalWindow:  10 * time.Second,
 	}
 
-	// mgr, err := manager.New(conf, st, nil) // nil publisher until Module 6
 	mgr, err := manager.New(conf, st, store.NewRedisPublisher(rdb), store.NewRedisBidLog(rdb))
 	if err != nil {
 		log.Fatalf("manager: %v", err)
@@ -82,7 +90,8 @@ func main() {
 		g.GracefulStop()
 	}()
 
-	log.Printf("engine: auction %q ends at %s, gRPC on %s", conf.AuctionID, conf.EndAt.Format(time.RFC3339), addr)
+	log.Printf("engine: auction %q starts at %s, ends at %s, gRPC on %s",
+		conf.AuctionID, conf.StartAt.Format(time.RFC3339), conf.EndAt.Format(time.RFC3339), addr)
 	if err := g.Serve(lis); err != nil {
 		log.Fatalf("serve: %v", err)
 	}

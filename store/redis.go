@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"strconv"
 	"time"
 
@@ -16,7 +17,8 @@ local cur = tonumber(redis.call('HGET', KEYS[1], 'version') or '-1')
 if cur >= tonumber(ARGV[1]) then return 0 end
 redis.call('HSET', KEYS[1],
   'version', ARGV[1], 'price', ARGV[2], 'stock_left', ARGV[3],
-  'ends_at', ARGV[4], 'status', ARGV[5])
+  'ends_at', ARGV[4], 'status', ARGV[5],
+  'top', ARGV[6], 'start_ms', ARGV[7], 'title', ARGV[8])
 return 1
 `)
 
@@ -31,6 +33,12 @@ func NewRedisStore(rdb *redis.Client) *RedisStore {
 func stateKey(id string) string { return "auction:" + id + ":state" }
 
 func (s *RedisStore) SaveState(ctx context.Context, st cfg.AuctionState) error {
+	top := "[]"
+	if len(st.Top) > 0 {
+		if b, err := json.Marshal(st.Top); err == nil {
+			top = string(b)
+		}
+	}
 	return saveScript.Run(ctx, s.rdb,
 		[]string{stateKey(st.AuctionID)},
 		st.Version,
@@ -38,6 +46,9 @@ func (s *RedisStore) SaveState(ctx context.Context, st cfg.AuctionState) error {
 		st.StockLeft,
 		st.EndAt.UnixMilli(),
 		string(st.Status),
+		top,
+		st.StartAt.UnixMilli(),
+		st.Title,
 	).Err()
 }
 
@@ -51,13 +62,19 @@ func (s *RedisStore) LoadState(ctx context.Context, id string) (cfg.AuctionState
 	price, _ := strconv.ParseInt(m["price"], 10, 64)
 	stock, _ := strconv.Atoi(m["stock_left"])
 	ends, _ := strconv.ParseInt(m["ends_at"], 10, 64)
+	start, _ := strconv.ParseInt(m["start_ms"], 10, 64)
+	var top []cfg.LeaderEntry
+	_ = json.Unmarshal([]byte(m["top"]), &top)
 
 	return cfg.AuctionState{
 		AuctionID: id,
+		Title:     m["title"],
 		Version:   ver,
 		Price:     price,
 		StockLeft: stock,
+		StartAt:   time.UnixMilli(start),
 		EndAt:     time.UnixMilli(ends),
 		Status:    cfg.AuctionStatus(m["status"]),
+		Top:       top,
 	}, nil
 }

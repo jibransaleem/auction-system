@@ -1,17 +1,18 @@
 package main
 
 import (
-	"github.com/redis/go-redis/v9"
 	"context"
-	_ "embed"
 	"encoding/json"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
-	"golang.org/x/time/rate"
+
 	"github.com/coder/websocket"
+	"github.com/redis/go-redis/v9"
+	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
@@ -20,11 +21,9 @@ import (
 	"github.com/jibransaleem/auction-system/store"
 )
 
-//go:embed index.html
-var page []byte
+// ---------- fanout ----------
 
-// ---------- messages ----------
-// fanout sends Redis price updates to all clients.
+// fanout sends Redis price/state/closed updates to all clients.
 // In the final window it keeps only the newest update and flushes every 50 ms.
 func (g *Gateway) fanout(ch <-chan *redis.Message, endsAt time.Time) {
 	const window = 10 * time.Second
@@ -72,6 +71,9 @@ func (g *Gateway) fanout(ch <-chan *redis.Message, endsAt time.Time) {
 		}
 	}
 }
+
+// ---------- messages ----------
+
 type inMsg struct {
 	Type   string `json:"type"`
 	BidID  string `json:"bid_id"`
@@ -95,6 +97,7 @@ type outError struct {
 
 type outState struct {
 	Type      string `json:"type"` // "state"
+	Title     string `json:"title,omitempty"`
 	Price     int64  `json:"price"`
 	Version   uint64 `json:"version"`
 	StockLeft int32  `json:"stock_left"`
@@ -162,10 +165,11 @@ func (h *Hub) count() int {
 // ---------- gateway ----------
 
 type Gateway struct {
-	engine    pb.BidEngineClient
-	auctionID string
-	hub       *Hub
-	limiters  sync.Map // user -> *rate.Limiter
+	engine       pb.BidEngineClient
+	auctionID    string
+	auctionTitle string
+	hub          *Hub
+	limiters     sync.Map // user -> *rate.Limiter
 }
 
 // one limiter per USER, so opening many tabs doesn't bypass it
@@ -176,6 +180,7 @@ func (g *Gateway) limiter(user string) *rate.Limiter {
 	l, _ := g.limiters.LoadOrStore(user, rate.NewLimiter(5, 5)) // 5/s, burst 5
 	return l.(*rate.Limiter)
 }
+
 func writePump(ctx context.Context, cancel context.CancelFunc, c *websocket.Conn, send <-chan []byte) {
 	for {
 		select {
@@ -192,6 +197,7 @@ func writePump(ctx context.Context, cancel context.CancelFunc, c *websocket.Conn
 		}
 	}
 }
+
 func (g *Gateway) ws(w http.ResponseWriter, r *http.Request) {
 	user := r.URL.Query().Get("user")
 	if user == "" {
@@ -238,7 +244,15 @@ func (g *Gateway) ws(w http.ResponseWriter, r *http.Request) {
 	// send the current state so a late joiner sees the price right away
 	sctx, scancel := context.WithTimeout(ctx, 500*time.Millisecond)
 	if st, err := g.engine.GetState(sctx, &pb.GetStateRequest{AuctionId: g.auctionID}); err == nil {
-		cl.pushJSON(outState{"state", st.Price, st.Version, st.StockLeft, st.EndsAtUnixMs, st.Status})
+		cl.pushJSON(outState{
+			Type:      "state",
+			Title:     g.auctionTitle,
+			Price:     st.Price,
+			Version:   st.Version,
+			StockLeft: st.StockLeft,
+			EndsAtMs:  st.EndsAtUnixMs,
+			Status:    st.Status,
+		})
 	}
 	scancel()
 
@@ -274,6 +288,31 @@ func (g *Gateway) ws(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// ---------- static UI helpers ----------
+
+func resolveStaticDir() string {
+	candidates := []string{
+		"static",
+		filepath.Join("gateway", "static"),
+	}
+	for _, dir := range candidates {
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			return dir
+		}
+	}
+	return "static"
+}
+
+func serveHTMLFile(w http.ResponseWriter, r *http.Request, staticDir, filename string) {
+	fullPath := filepath.Join(staticDir, filename)
+	if _, err := os.Stat(fullPath); err != nil {
+		http.Error(w, filename+" not found in "+staticDir, http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	http.ServeFile(w, r, fullPath)
+}
+
 // ---------- main ----------
 
 func env(k, def string) string {
@@ -285,6 +324,7 @@ func env(k, def string) string {
 
 func main() {
 	auctionID := env("AUCTION_ID", "a1")
+	auctionTitle := env("AUCTION_TITLE", "Flash auction")
 
 	// gRPC to the engine
 	conn, err := grpc.NewClient(env("ENGINE_ADDR", "localhost:50051"),
@@ -328,20 +368,35 @@ func main() {
 		log.Fatalf("subscribe: %v", err)
 	}
 	rcancel()
-	go func() {
-		for m := range sub.Channel() {
-			hub.broadcast([]byte(m.Payload))
-		}
-	}()
 
-	g := &Gateway{engine: engineClient, auctionID: auctionID, hub: hub}
+	g := &Gateway{
+		engine:       engineClient,
+		auctionID:    auctionID,
+		auctionTitle: auctionTitle,
+		hub:          hub,
+	}
 	go g.fanout(sub.Channel(), endsAt)
+
+	staticDir := resolveStaticDir()
+	log.Printf("serving static UI from %s", staticDir)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", g.ws)
+	mux.HandleFunc("/admin.html", func(w http.ResponseWriter, r *http.Request) {
+		serveHTMLFile(w, r, staticDir, "admin.html")
+	})
+	mux.HandleFunc("/admin", func(w http.ResponseWriter, r *http.Request) {
+		serveHTMLFile(w, r, staticDir, "admin.html")
+	})
+	mux.HandleFunc("/client.html", func(w http.ResponseWriter, r *http.Request) {
+		serveHTMLFile(w, r, staticDir, "client.html")
+	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write(page)
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		serveHTMLFile(w, r, staticDir, "client.html")
 	})
 
 	addr := env("GATEWAY_ADDR", ":8080")
