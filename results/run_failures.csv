@@ -1,0 +1,5 @@
+Method,Name,Error,Occurrences,First Seen,Last Seen
+WS,connect,WebSocketTimeoutException('Connection timed out'),1294,2026-11-19T22:51:14Z,2026-11-19T22:51:37Z
+WS,bid:duplicate -> timeout,TimeoutError('timeout'),10,2026-11-19T22:46:57Z,2026-11-19T22:51:36Z
+WS,bid:competitive -> timeout,TimeoutError('timeout'),100,2026-11-19T22:46:57Z,2026-11-19T22:51:36Z
+WS,bid:low -> timeout,TimeoutError('timeout'),21,2026-11-19T22:46:58Z,2026-11-19T22:51:33Z
