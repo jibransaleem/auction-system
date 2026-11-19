@@ -5,6 +5,8 @@ import "time"
 // Initial auction configuration
 type AuctionConfig struct {
 	AuctionID    string        `json:"auction_id"`
+	Title        string        `json:"title"`
+	StartAt      time.Time     `json:"start_at"`
 	Stock        int           `json:"stock"`
 	MinimumPrice int64         `json:"minimum_price"`
 	MinIncrement int64         `json:"min_increment"`
@@ -20,6 +22,7 @@ type Bid struct {
 	Amount     int64     `json:"bid_amount"`
 	ReceivedAt time.Time `json:"received_at"`
 }
+
 // AcceptedBid is written to the Redis Stream for the persister.
 type AcceptedBid struct {
 	BidID     string    `json:"bid_id"`
@@ -29,6 +32,7 @@ type AcceptedBid struct {
 	Version   uint64    `json:"version"`
 	At        time.Time `json:"at"`
 }
+
 // Auction status
 type AuctionStatus string
 
@@ -38,25 +42,36 @@ const (
 	StatusClosed    AuctionStatus = "closed"
 )
 
+// Leaderboard entry
+type LeaderEntry struct {
+	Rank     int    `json:"rank"`
+	BidderID string `json:"bidder"`
+	Amount   int64  `json:"amount"`
+}
+
 // Current auction state
 type AuctionState struct {
 	AuctionID string        `json:"auction_id"`
+	Title     string        `json:"title"`
+	StartAt   time.Time     `json:"start_at"`
 	Price     int64         `json:"price"`
 	Version   uint64        `json:"version"`
 	StockLeft int           `json:"stock_left"`
 	EndAt     time.Time     `json:"end_at"`
 	Status    AuctionStatus `json:"auction_status"`
+	Top       []LeaderEntry `json:"top,omitempty"`
 }
 
 // Bid rejection reasons
 type RejectReason string
 
 const (
-	ReasonNone      RejectReason = ""
-	ReasonTooLow    RejectReason = "too_low"
-	ReasonClosed    RejectReason = "closed"
-	ReasonDuplicate RejectReason = "duplicate"
-	ReasonNotFound  RejectReason = "auction_not_found"
+	ReasonNone       RejectReason = ""
+	ReasonNotStarted RejectReason = "not_started"
+	ReasonTooLow     RejectReason = "too_low"
+	ReasonClosed     RejectReason = "closed"
+	ReasonDuplicate  RejectReason = "duplicate"
+	ReasonNotFound   RejectReason = "auction_not_found"
 )
 
 // Result returned after processing a bid
@@ -78,12 +93,13 @@ const (
 )
 
 type Event struct {
-	Kind      EventKind `json:"kind"`
-	AuctionID string    `json:"auction_id"`
-	Price     int64     `json:"price"`
-	Version   uint64    `json:"version"`
-	StockLeft int       `json:"stock_left"`
-	At        time.Time `json:"at"`
+	Kind      EventKind     `json:"kind"`
+	AuctionID string        `json:"auction_id"`
+	Price     int64         `json:"price"`
+	Version   uint64        `json:"version"`
+	StockLeft int           `json:"stock_left"`
+	At        time.Time     `json:"at"`
+	Top       []LeaderEntry `json:"top,omitempty"`
 }
 
 // Auction winner information
